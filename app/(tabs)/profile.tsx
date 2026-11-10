@@ -17,25 +17,23 @@ import {
   View,
 } from 'react-native';
 
-import AppButton from '@/components/AppButton';
-import { signOut, useAuth } from '@/lib/auth';
+import { useAuth, signOut } from '@/lib/auth';
 import { getProfile, updateProfile, type Profile } from '@/lib/profiles';
 
 const C = {
-  background: '#FFF5F8',
+  bg: '#EDF6FD',
   white: '#FFFFFF',
-  pink: '#F3A6C2',
-  pinkDark: '#D65F8A',
-  pinkDeep: '#AD456F',
-  pinkLight: '#FCE4ED',
-  pinkSoft: '#FFF0F5',
-  border: '#F4CDDC',
-  text: '#543746',
-  muted: '#A47D8D',
-  green: '#348568',
-  greenSoft: '#E7F6EE',
-  red: '#C94F69',
-  redSoft: '#FCE8ED',
+  primary: '#3188C8',
+  dark: '#205D87',
+  pale: '#E1F1FF',
+  light: '#F6FAFE',
+  border: '#D8E7F3',
+  text: '#203C50',
+  muted: '#7A92A5',
+  green: '#319875',
+  greenBg: '#E8F6EF',
+  red: '#D84F60',
+  redBg: '#FFF0F1',
 };
 
 export default function ProfileScreen() {
@@ -43,14 +41,12 @@ export default function ProfileScreen() {
   const router = useRouter();
 
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [draftName, setDraftName] = useState('');
+  const [name, setName] = useState('');
   const [photo, setPhoto] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-
-  const photoKey = user ? `profile_photo_${user.id}` : '';
 
   const loadProfile = useCallback(async () => {
     if (!user) {
@@ -63,19 +59,19 @@ export default function ProfileScreen() {
     setLoading(true);
 
     try {
-      const [result, savedPhoto] = await Promise.all([
+      const [data, savedPhoto] = await Promise.all([
         getProfile(user.id),
         AsyncStorage.getItem(`profile_photo_${user.id}`),
       ]);
 
-      setProfile(result);
-      setDraftName(result?.full_name ?? '');
+      setProfile(data);
+      setName(data?.full_name ?? '');
       setPhoto(savedPhoto);
     } catch (error) {
-      console.error('Profile loading error:', error);
+      console.error('Profile load error:', error);
       Alert.alert(
-        'Profile Error',
-        'Unable to load your profile. Please check your connection.'
+        'Unable to load profile',
+        'Please check your internet connection and try again.'
       );
     } finally {
       setLoading(false);
@@ -97,8 +93,8 @@ export default function ProfileScreen() {
 
       if (!permission.granted) {
         Alert.alert(
-          'Gallery Permission',
-          'Please allow gallery access to choose your profile picture.'
+          'Permission required',
+          'Please allow gallery access to select your profile picture.'
         );
         return;
       }
@@ -112,25 +108,25 @@ export default function ProfileScreen() {
 
       if (result.canceled || !result.assets?.[0]?.uri) return;
 
-      const selectedPhoto = result.assets[0].uri;
+      const uri = result.assets[0].uri;
 
-      await AsyncStorage.setItem(photoKey, selectedPhoto);
-      setPhoto(selectedPhoto);
+      await AsyncStorage.setItem(`profile_photo_${user.id}`, uri);
+      setPhoto(uri);
 
       Alert.alert('Success', 'Your profile picture has been updated.');
     } catch (error) {
-      console.error('Photo selection error:', error);
-      Alert.alert('Error', 'Could not update your profile picture.');
+      console.error('Photo picker error:', error);
+      Alert.alert('Photo error', 'Unable to update your picture.');
     }
   };
 
   const saveProfile = async () => {
     if (!user) return;
 
-    const name = draftName.trim();
+    const cleanName = name.trim();
 
-    if (!name) {
-      Alert.alert('Required', 'Please enter your full name.');
+    if (!cleanName) {
+      Alert.alert('Name required', 'Please enter your full name.');
       return;
     }
 
@@ -139,36 +135,41 @@ export default function ProfileScreen() {
     try {
       const { error } = await updateProfile(
         user.id,
-        { full_name: name },
+        { full_name: cleanName },
         user.email ?? undefined
       );
 
       if (error) {
-        Alert.alert('Save Failed', error);
+        Alert.alert('Save failed', error);
         return;
       }
 
-      setProfile((previous) =>
-        previous ? { ...previous, full_name: name } : previous
+      setProfile((current) =>
+        current ? { ...current, full_name: cleanName } : current
       );
-
-      setDraftName(name);
+      setName(cleanName);
       setEditing(false);
-      Alert.alert('Success', 'Your profile name has been saved.');
+
+      Alert.alert('Saved', 'Your profile has been updated.');
     } catch (error) {
-      console.error('Save profile error:', error);
-      Alert.alert('Error', 'Unable to save your profile.');
+      console.error('Profile save error:', error);
+      Alert.alert('Error', 'Could not save your profile.');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleSignOut = async () => {
+  const cancelEditing = () => {
+    setName(profile?.full_name ?? '');
+    setEditing(false);
+  };
+
+  const confirmSignOut = () => {
     if (signingOut) return;
 
     Alert.alert(
       'Sign Out',
-      'Are you sure you want to sign out?',
+      'Are you sure you want to sign out of your account?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -182,7 +183,7 @@ export default function ProfileScreen() {
               router.replace('/login');
             } catch (error: any) {
               Alert.alert(
-                'Sign Out Failed',
+                'Sign out failed',
                 error?.message || 'Please try again.'
               );
             } finally {
@@ -194,479 +195,409 @@ export default function ProfileScreen() {
     );
   };
 
-  const getInitials = (name?: string | null) => {
-    const parts = (name || user?.email || 'User')
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean);
-
-    if (parts.length > 1) {
-      return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-    }
-
-    return (parts[0] || 'U').slice(0, 2).toUpperCase();
-  };
+  const initials = (profile?.full_name || user?.email || 'User')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase();
 
   if (loading) {
     return (
-      <View style={styles.loading}>
-        <StatusBar barStyle="dark-content" backgroundColor={C.background} />
-        <View style={styles.loadingIcon}>
-          <ActivityIndicator size="large" color={C.pinkDark} />
+      <View style={styles.center}>
+        <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+        <View style={styles.loadingCircle}>
+          <ActivityIndicator size="large" color={C.primary} />
         </View>
-        <Text style={styles.loadingTitle}>Preparing your profile</Text>
-        <Text style={styles.muted}>Just a moment...</Text>
+        <Text style={styles.loadingTitle}>Loading your profile</Text>
+        <Text style={styles.muted}>Please wait a moment...</Text>
       </View>
     );
   }
 
   if (!user) {
     return (
-      <View style={styles.loading}>
-        <StatusBar barStyle="dark-content" backgroundColor={C.background} />
-        <View style={styles.loadingIcon}>
-          <Ionicons name="person-outline" size={42} color={C.pinkDark} />
+      <View style={styles.center}>
+        <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+        <View style={styles.loadingCircle}>
+          <Ionicons name="person-outline" size={36} color={C.primary} />
         </View>
-        <Text style={styles.heading}>Welcome back!</Text>
+        <Text style={styles.pageTitle}>Welcome back!</Text>
         <Text style={styles.muted}>Sign in to view your profile.</Text>
-        <View style={styles.loginButton}>
-          <AppButton
-            title="Go to Login"
-            icon="log-in-outline"
-            onPress={() => router.replace('/login')}
-          />
-        </View>
+        <Pressable
+          style={styles.primaryButton}
+          onPress={() => router.replace('/login')}
+        >
+          <Text style={styles.primaryButtonText}>Go to Login</Text>
+          <Ionicons name="arrow-forward" size={18} color={C.white} />
+        </Pressable>
       </View>
     );
   }
 
   const isTeacher = profile?.role?.toLowerCase() === 'teacher';
-  const displayName =
-    profile?.full_name?.trim() || 'Complete your profile';
 
   return (
     <View style={styles.screen}>
-      <StatusBar barStyle="dark-content" backgroundColor={C.background} />
+      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.wrapper}>
-          {/* Page heading */}
-          <View style={styles.topBar}>
-            <View style={styles.headingLeft}>
-              <Text style={styles.eyebrow}>QR-ATT • YOUR ACCOUNT</Text>
-              <Text style={styles.pageTitle}>My Profile</Text>
-              <Text style={styles.pageSubtitle}>
-                Your details, your space.
-              </Text>
-            </View>
-
-            <Pressable
-              onPress={() => void loadProfile()}
-              style={({ pressed }) => [
-                styles.headerButton,
-                pressed && styles.pressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Refresh profile"
-            >
-              <Ionicons
-                name="refresh-outline"
-                size={21}
-                color={C.pinkDeep}
-              />
-            </Pressable>
+        {/* HEADER */}
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.eyebrow}>QR ATTENDANCE</Text>
+            <Text style={styles.pageTitle}>My Profile</Text>
+            <Text style={styles.subtitle}>
+              Manage your personal account.
+            </Text>
           </View>
 
-          {/* Main profile card */}
-          <View style={styles.heroCard}>
-            <View style={styles.heroTop}>
-              <View style={styles.heroPill}>
-                <Ionicons
-                  name="heart"
-                  size={12}
-                  color={C.pinkDeep}
-                />
-                <Text style={styles.heroPillText}>MY ACCOUNT</Text>
-              </View>
+          <Pressable
+            style={styles.refreshButton}
+            onPress={() => void loadProfile()}
+            accessibilityRole="button"
+            accessibilityLabel="Refresh profile"
+          >
+            <Ionicons name="refresh-outline" size={22} color={C.dark} />
+          </Pressable>
+        </View>
 
-              <Ionicons
-                name="sparkles"
-                size={24}
-                color={C.pink}
-              />
+        {/* PROFILE CARD */}
+        <View style={styles.hero}>
+          <View style={styles.heroDecoration} />
+
+          <View style={styles.heroTop}>
+            <View style={styles.accountLabel}>
+              <Ionicons name="shield-checkmark" size={14} color={C.dark} />
+              <Text style={styles.accountLabelText}>MY ACCOUNT</Text>
             </View>
+            <Ionicons name="sparkles-outline" size={24} color={C.primary} />
+          </View>
 
-            <View style={styles.avatarArea}>
+          <Pressable
+            onPress={choosePhoto}
+            style={({ pressed }) => [
+              styles.avatarWrapper,
+              pressed && styles.pressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Change profile picture"
+          >
+            {photo ? (
+              <Image source={{ uri: photo }} style={styles.avatar} />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.initials}>{initials || 'U'}</Text>
+              </View>
+            )}
+
+            <View style={styles.cameraButton}>
+              <Ionicons name="camera" size={17} color={C.white} />
+            </View>
+          </Pressable>
+
+          <Text style={styles.profileName}>
+            {profile?.full_name?.trim() || 'Complete Your Profile'}
+          </Text>
+
+          <Text style={styles.email} selectable>
+            {user.email || 'No email available'}
+          </Text>
+
+          <View
+            style={[
+              styles.roleBadge,
+              isTeacher ? styles.teacherBadge : styles.studentBadge,
+            ]}
+          >
+            <Ionicons
+              name={isTeacher ? 'school-outline' : 'person-outline'}
+              size={15}
+              color={isTeacher ? C.white : C.dark}
+            />
+            <Text
+              style={[
+                styles.roleText,
+                !isTeacher && styles.studentRoleText,
+              ]}
+            >
+              {isTeacher ? 'Teacher Account' : 'Student Account'}
+            </Text>
+          </View>
+
+          <Pressable
+            onPress={choosePhoto}
+            style={({ pressed }) => [
+              styles.changePhotoButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Ionicons name="image-outline" size={17} color={C.dark} />
+            <Text style={styles.changePhotoText}>Change Profile Photo</Text>
+          </Pressable>
+
+          <View style={styles.heroFooter}>
+            <View style={styles.onlineDot} />
+            <Text style={styles.heroFooterText}>
+              Your attendance account
+            </Text>
+            <Ionicons
+              name="checkmark-circle"
+              size={17}
+              color={C.green}
+            />
+          </View>
+        </View>
+
+        {/* PERSONAL INFORMATION */}
+        <View style={styles.sectionHeading}>
+          <View style={styles.sectionIcon}>
+            <Ionicons name="person-outline" size={21} color={C.primary} />
+          </View>
+
+          <View style={styles.sectionHeadingText}>
+            <Text style={styles.sectionTitle}>Personal Information</Text>
+            <Text style={styles.sectionSubtitle}>
+              Your basic account details
+            </Text>
+          </View>
+
+          {!editing && (
+            <Pressable
+              onPress={() => setEditing(true)}
+              style={styles.editButton}
+            >
+              <Ionicons name="create-outline" size={17} color={C.primary} />
+              <Text style={styles.editButtonText}>Edit</Text>
+            </Pressable>
+          )}
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.label}>FULL NAME</Text>
+
+          {editing ? (
+            <TextInput
+              style={styles.input}
+              value={name}
+              onChangeText={setName}
+              placeholder="Enter your full name"
+              placeholderTextColor={C.muted}
+              autoCapitalize="words"
+              autoCorrect={false}
+              editable={!saving}
+              returnKeyType="done"
+              onSubmitEditing={() => void saveProfile()}
+            />
+          ) : (
+            <InfoRow
+              icon="person-outline"
+              value={profile?.full_name || 'Not set'}
+            />
+          )}
+
+          <Text style={styles.label}>EMAIL ADDRESS</Text>
+          <InfoRow
+            icon="mail-outline"
+            value={user.email || 'Not available'}
+          />
+
+          <Text style={styles.label}>ACCOUNT ID</Text>
+          <InfoRow icon="finger-print-outline" value={user.id} small />
+
+          {editing && (
+            <View style={styles.actions}>
               <Pressable
-                onPress={choosePhoto}
-                style={({ pressed }) => [
-                  styles.avatarOuter,
-                  pressed && styles.pressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Change profile picture"
+                style={styles.cancelButton}
+                onPress={cancelEditing}
+                disabled={saving}
               >
-                {photo ? (
-                  <Image
-                    source={{ uri: photo }}
-                    style={styles.avatar}
-                  />
-                ) : (
-                  <View style={styles.avatarPlaceholder}>
-                    <Text style={styles.avatarText}>
-                      {getInitials(profile?.full_name)}
-                    </Text>
-                  </View>
-                )}
+                <Text style={styles.cancelText}>Cancel</Text>
+              </Pressable>
 
-                <View style={styles.cameraBadge}>
+              <Pressable
+                style={[styles.saveButton, saving && styles.disabled]}
+                onPress={() => void saveProfile()}
+                disabled={saving}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color={C.white} />
+                ) : (
                   <Ionicons
-                    name="camera"
-                    size={17}
+                    name="checkmark-circle-outline"
+                    size={19}
                     color={C.white}
                   />
-                </View>
+                )}
+                <Text style={styles.saveText}>
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </Text>
               </Pressable>
-
-              <View style={styles.verifiedDot}>
-                <Ionicons
-                  name="checkmark"
-                  size={12}
-                  color={C.white}
-                />
-              </View>
             </View>
+          )}
+        </View>
 
-            <Text style={styles.profileName} numberOfLines={2}>
-              {displayName}
+        {/* ACADEMIC INFORMATION */}
+        <View style={styles.sectionHeading}>
+          <View style={styles.sectionIcon}>
+            <Ionicons name="school-outline" size={22} color={C.primary} />
+          </View>
+
+          <View style={styles.sectionHeadingText}>
+            <Text style={styles.sectionTitle}>Academic Information</Text>
+            <Text style={styles.sectionSubtitle}>
+              Your school and program details
             </Text>
-
-            <Text style={styles.profileEmail} numberOfLines={2}>
-              {user.email || 'No email address'}
-            </Text>
-
-            <View
-              style={[
-                styles.roleBadge,
-                isTeacher ? styles.teacherBadge : styles.studentBadge,
-              ]}
-            >
-              <Ionicons
-                name={isTeacher ? 'school-outline' : 'person-outline'}
-                size={15}
-                color={isTeacher ? C.white : C.pinkDeep}
-              />
-              <Text
-                style={[
-                  styles.roleText,
-                  !isTeacher && styles.studentRoleText,
-                ]}
-              >
-                {isTeacher ? 'Teacher Account' : 'Student Account'}
-              </Text>
-            </View>
-
-            <Pressable
-              onPress={choosePhoto}
-              style={({ pressed }) => [
-                styles.photoButton,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Ionicons
-                name="image-outline"
-                size={17}
-                color={C.pinkDeep}
-              />
-              <Text style={styles.photoButtonText}>
-                Update Profile Photo
-              </Text>
-            </Pressable>
-
-            <View style={styles.heroDivider} />
-
-            <View style={styles.accountFooter}>
-              <View style={styles.accountFooterIcon}>
-                <Ionicons
-                  name="shield-checkmark-outline"
-                  size={18}
-                  color={C.green}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.accountFooterTitle}>
-                  Attendance account
-                </Text>
-                <Text style={styles.accountFooterSubtitle}>
-                  Keep your information up to date.
-                </Text>
-              </View>
-              <Ionicons
-                name="heart"
-                size={18}
-                color={C.pink}
-              />
-            </View>
           </View>
+        </View>
 
-          {/* Personal information */}
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionIcon}>
-              <Ionicons
-                name="person-circle-outline"
-                size={23}
-                color={C.pinkDeep}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.sectionTitle}>
-                Personal Information
-              </Text>
-              <Text style={styles.sectionSubtitle}>
-                Your basic account details
-              </Text>
+        <View style={styles.academicCard}>
+          <View style={styles.academicBanner}>
+            <View style={styles.academicBannerIcon}>
+              <Ionicons name="school" size={28} color={C.white} />
             </View>
 
-            {!editing && (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.editButton,
-                  pressed && styles.pressed,
-                ]}
-                onPress={() => setEditing(true)}
-              >
-                <Ionicons
-                  name="create-outline"
-                  size={17}
-                  color={C.pinkDeep}
-                />
-                <Text style={styles.editButtonText}>Edit</Text>
-              </Pressable>
-            )}
-          </View>
-
-          <View style={styles.sectionCard}>
-            <Text style={styles.fieldLabel}>FULL NAME</Text>
-
-            {editing ? (
-              <TextInput
-                style={styles.input}
-                value={draftName}
-                onChangeText={setDraftName}
-                placeholder="Enter your full name"
-                placeholderTextColor={C.muted}
-                autoCapitalize="words"
-                autoCorrect={false}
-                editable={!saving}
-                returnKeyType="done"
-                onSubmitEditing={() => void saveProfile()}
-              />
-            ) : (
-              <View style={styles.valueBox}>
-                <View style={styles.fieldIcon}>
-                  <Ionicons
-                    name="person-outline"
-                    size={19}
-                    color={C.pinkDeep}
-                  />
-                </View>
-                <Text style={styles.valueText}>
-                  {profile?.full_name || 'Not set'}
-                </Text>
-              </View>
-            )}
-
-            <Text style={styles.fieldLabel}>EMAIL ADDRESS</Text>
-            <View style={styles.valueBox}>
-              <View style={styles.fieldIcon}>
-                <Ionicons
-                  name="mail-outline"
-                  size={19}
-                  color={C.pinkDeep}
-                />
-              </View>
-              <Text style={styles.valueText} selectable>
-                {user.email || 'Not set'}
+            <View style={styles.academicBannerContent}>
+              <Text style={styles.academicBannerLabel}>
+                CURRENT PROGRAM
               </Text>
-            </View>
-
-            <Text style={styles.fieldLabel}>ACCOUNT ID</Text>
-            <View style={styles.valueBox}>
-              <View style={styles.fieldIcon}>
-                <Ionicons
-                  name="finger-print-outline"
-                  size={19}
-                  color={C.pinkDeep}
-                />
-              </View>
-              <Text
-                style={styles.userIdText}
-                selectable
-                numberOfLines={2}
-              >
-                {user.id}
+              <Text style={styles.academicBannerTitle}>
+                Bachelor of Science in Information Technology
               </Text>
-              <Ionicons
-                name="lock-closed-outline"
-                size={15}
-                color={C.muted}
-              />
-            </View>
-
-            {editing && (
-              <View style={styles.editActions}>
-                <Pressable
-                  style={styles.cancelButton}
-                  onPress={() => {
-                    setDraftName(profile?.full_name ?? '');
-                    setEditing(false);
-                  }}
-                  disabled={saving}
-                >
-                  <Text style={styles.cancelText}>Cancel</Text>
-                </Pressable>
-
-                <Pressable
-                  style={[
-                    styles.saveButton,
-                    saving && styles.disabledButton,
-                  ]}
-                  onPress={() => void saveProfile()}
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <ActivityIndicator size="small" color={C.white} />
-                  ) : (
-                    <Ionicons
-                      name="checkmark-circle-outline"
-                      size={19}
-                      color={C.white}
-                    />
-                  )}
-                  <Text style={styles.saveText}>
-                    {saving ? 'Saving...' : 'Save Changes'}
-                  </Text>
-                </Pressable>
-              </View>
-            )}
-          </View>
-
-          {/* Academic information */}
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionIcon}>
-              <Ionicons
-                name="school-outline"
-                size={23}
-                color={C.pinkDeep}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.sectionTitle}>
-                Academic Information
-              </Text>
-              <Text style={styles.sectionSubtitle}>
-                Your department and section
+              <Text style={styles.academicBannerSubtitle}>
+                BSIT • 3rd Year • Block D
               </Text>
             </View>
           </View>
 
-          <View style={styles.sectionCard}>
-            <AcademicRow
+          <View style={styles.academicDetails}>
+            <AcademicDetail
               icon="business-outline"
               label="Department"
               value="BSIT"
             />
-            <View style={styles.line} />
-            <AcademicRow
+
+            <View style={styles.academicDetailDivider} />
+
+            <AcademicDetail
               icon="book-outline"
               label="Year Level"
               value="3rd Year"
             />
-            <View style={styles.line} />
-            <AcademicRow
+
+            <View style={styles.academicDetailDivider} />
+
+            <AcademicDetail
               icon="people-outline"
               label="Block / Section"
-              value="E"
+              value="Block D"
             />
           </View>
 
-          {/* Helpful tip */}
-          <View style={styles.tipCard}>
-            <View style={styles.tipIcon}>
-              <Ionicons
-                name="bulb-outline"
-                size={22}
-                color={C.pinkDeep}
-              />
-            </View>
-            <View style={styles.tipContent}>
-              <Text style={styles.tipTitle}>A little reminder</Text>
-              <Text style={styles.tipText}>
-                Make sure your name and profile photo are correct so
-                your account is easier to recognize.
-              </Text>
-            </View>
-          </View>
-
-          {/* Sign out */}
-          <View style={styles.signOutCard}>
-            <View style={styles.signOutHeader}>
-              <View style={styles.signOutIcon}>
-                <Ionicons
-                  name="log-out-outline"
-                  size={21}
-                  color={C.red}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.signOutTitle}>Sign Out</Text>
-                <Text style={styles.signOutDescription}>
-                  End your session on this device.
-                </Text>
-              </View>
-            </View>
-
-            <Pressable
-              style={({ pressed }) => [
-                styles.signOutButton,
-                pressed && styles.pressed,
-                signingOut && styles.disabledButton,
-              ]}
-              onPress={handleSignOut}
-              disabled={signingOut}
-            >
-              {signingOut ? (
-                <ActivityIndicator size="small" color={C.white} />
-              ) : (
-                <Ionicons
-                  name="log-out-outline"
-                  size={19}
-                  color={C.white}
-                />
-              )}
-              <Text style={styles.signOutButtonText}>
-                {signingOut ? 'Signing Out...' : 'Sign Out'}
-              </Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.footer}>
-            <Ionicons name="heart" size={13} color={C.pinkDark} />
-            <Text style={styles.footerText}>
-              Made with care • QR-ATT-MAIN
+          <View style={styles.academicFooter}>
+            <Ionicons
+              name="checkmark-circle"
+              size={18}
+              color={C.green}
+            />
+            <Text style={styles.academicFooterText}>
+              Academic profile overview
             </Text>
           </View>
+        </View>
+
+        {/* TIP */}
+        <View style={styles.tipCard}>
+          <View style={styles.tipIcon}>
+            <Ionicons name="bulb-outline" size={22} color={C.primary} />
+          </View>
+
+          <View style={styles.tipContent}>
+            <Text style={styles.tipTitle}>Keep your profile updated</Text>
+            <Text style={styles.tipDescription}>
+              Use your correct name and a recognizable photo to help
+              identify your attendance account.
+            </Text>
+          </View>
+        </View>
+
+        {/* SIGN OUT */}
+        <View style={styles.signOutCard}>
+          <View style={styles.signOutTop}>
+            <View style={styles.signOutIcon}>
+              <Ionicons name="log-out-outline" size={22} color={C.red} />
+            </View>
+
+            <View style={styles.signOutInfo}>
+              <Text style={styles.signOutTitle}>Sign Out</Text>
+              <Text style={styles.signOutDescription}>
+                Sign out of your account on this device.
+              </Text>
+            </View>
+          </View>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.signOutButton,
+              pressed && styles.pressed,
+              signingOut && styles.disabled,
+            ]}
+            onPress={confirmSignOut}
+            disabled={signingOut}
+          >
+            {signingOut ? (
+              <ActivityIndicator size="small" color={C.white} />
+            ) : (
+              <Ionicons name="log-out-outline" size={19} color={C.white} />
+            )}
+            <Text style={styles.signOutButtonText}>
+              {signingOut ? 'Signing Out...' : 'Sign Out'}
+            </Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.footer}>
+          <Ionicons name="heart" size={13} color={C.primary} />
+          <Text style={styles.footerText}>
+            QR-ATT • School Attendance
+          </Text>
         </View>
       </ScrollView>
     </View>
   );
 }
 
-function AcademicRow({
+function InfoRow({
+  icon,
+  value,
+  small = false,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  value: string;
+  small?: boolean;
+}) {
+  return (
+    <View style={styles.infoRow}>
+      <View style={styles.infoIcon}>
+        <Ionicons name={icon} size={19} color={C.primary} />
+      </View>
+      <Text
+        style={[styles.infoValue, small && styles.smallValue]}
+        selectable
+      >
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+function AcademicDetail({
   icon,
   label,
   value,
@@ -676,19 +607,12 @@ function AcademicRow({
   value: string;
 }) {
   return (
-    <View style={styles.academicRow}>
-      <View style={styles.academicIcon}>
-        <Ionicons name={icon} size={21} color={C.pinkDeep} />
+    <View style={styles.academicDetailItem}>
+      <View style={styles.academicDetailIcon}>
+        <Ionicons name={icon} size={22} color={C.primary} />
       </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.academicLabel}>{label}</Text>
-        <Text style={styles.academicValue}>{value}</Text>
-      </View>
-      <Ionicons
-        name="checkmark-circle"
-        size={19}
-        color={C.green}
-      />
+      <Text style={styles.academicDetailLabel}>{label}</Text>
+      <Text style={styles.academicDetailValue}>{value}</Text>
     </View>
   );
 }
@@ -696,208 +620,194 @@ function AcademicRow({
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: C.background,
+    backgroundColor: C.bg,
   },
   content: {
-    paddingHorizontal: 17,
-    paddingTop: 18,
-    paddingBottom: 38,
+    paddingHorizontal: 18,
+    paddingTop: 20,
+    paddingBottom: 40,
     alignItems: 'center',
   },
-  wrapper: {
-    width: '100%',
-    maxWidth: 600,
-  },
-  loading: {
+  center: {
     flex: 1,
-    backgroundColor: C.background,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: C.bg,
     padding: 24,
   },
-  loadingIcon: {
-    width: 76,
-    height: 76,
-    borderRadius: 26,
+  loadingCircle: {
+    width: 78,
+    height: 78,
+    borderRadius: 25,
     backgroundColor: C.white,
     borderWidth: 1,
     borderColor: C.border,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 18,
+    marginBottom: 17,
   },
   loadingTitle: {
-    fontSize: 17,
-    fontWeight: '800',
     color: C.text,
-    marginBottom: 5,
+    fontSize: 18,
+    fontWeight: '800',
   },
   muted: {
     color: C.muted,
     fontSize: 13,
-    marginTop: 5,
+    marginTop: 7,
     textAlign: 'center',
   },
-  topBar: {
+  header: {
+    width: '100%',
+    maxWidth: 600,
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  headingLeft: {
-    flex: 1,
+    alignItems: 'center',
+    marginBottom: 23,
   },
   eyebrow: {
-    color: C.pinkDeep,
     fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.8,
-    marginBottom: 6,
+    color: C.primary,
+    fontWeight: '900',
+    letterSpacing: 2,
+    marginBottom: 7,
   },
   pageTitle: {
-    color: C.text,
     fontSize: 30,
     fontWeight: '900',
-    letterSpacing: -0.7,
+    color: C.text,
+    letterSpacing: -0.8,
   },
-  pageSubtitle: {
+  subtitle: {
     color: C.muted,
     fontSize: 13,
-    marginTop: 4,
+    marginTop: 5,
   },
-  headerButton: {
-    width: 45,
-    height: 45,
+  refreshButton: {
+    width: 46,
+    height: 46,
     borderRadius: 16,
     backgroundColor: C.white,
     borderWidth: 1,
     borderColor: C.border,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 12,
   },
-  heroCard: {
+  hero: {
+    width: '100%',
+    maxWidth: 600,
     backgroundColor: C.white,
     borderRadius: 28,
     borderWidth: 1,
     borderColor: C.border,
     padding: 20,
-    marginBottom: 27,
+    marginBottom: 28,
+    alignItems: 'center',
     overflow: 'hidden',
-    shadowColor: C.pinkDark,
+    shadowColor: C.dark,
     shadowOffset: { width: 0, height: 7 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
+    shadowOpacity: 0.07,
+    shadowRadius: 15,
     elevation: 3,
   },
-  heroTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 15,
+  heroDecoration: {
+    position: 'absolute',
+    top: -75,
+    right: -55,
+    width: 190,
+    height: 190,
+    borderRadius: 100,
+    backgroundColor: C.pale,
   },
-  heroPill: {
+  heroTop: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 22,
+  },
+  accountLabel: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: C.pinkSoft,
-    borderRadius: 30,
-    paddingHorizontal: 11,
-    paddingVertical: 7,
+    backgroundColor: C.pale,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
-  heroPillText: {
-    color: C.pinkDeep,
+  accountLabelText: {
     fontSize: 10,
+    color: C.dark,
     fontWeight: '900',
     letterSpacing: 1,
   },
-  avatarArea: {
-    alignSelf: 'center',
-    position: 'relative',
-    marginBottom: 15,
-  },
-  avatarOuter: {
-    width: 116,
-    height: 116,
-    borderRadius: 58,
+  avatarWrapper: {
+    width: 122,
+    height: 122,
+    borderRadius: 61,
     padding: 4,
-    backgroundColor: C.pinkLight,
     borderWidth: 2,
-    borderColor: C.pink,
+    borderColor: C.primary,
+    backgroundColor: C.pale,
+    marginBottom: 16,
   },
   avatar: {
     width: '100%',
     height: '100%',
-    borderRadius: 54,
-    backgroundColor: C.pinkLight,
+    borderRadius: 56,
+    backgroundColor: C.pale,
   },
   avatarPlaceholder: {
     flex: 1,
-    borderRadius: 54,
-    backgroundColor: C.pinkLight,
+    borderRadius: 56,
+    backgroundColor: C.pale,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: {
-    color: C.pinkDeep,
-    fontSize: 35,
+  initials: {
+    color: C.dark,
+    fontSize: 36,
     fontWeight: '900',
   },
-  cameraBadge: {
+  cameraButton: {
     position: 'absolute',
     right: -2,
     bottom: 2,
-    width: 35,
-    height: 35,
-    borderRadius: 18,
-    backgroundColor: C.pinkDeep,
-    borderWidth: 3,
-    borderColor: C.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  verifiedDot: {
-    position: 'absolute',
-    right: -5,
-    top: 4,
-    width: 23,
-    height: 23,
-    borderRadius: 12,
-    backgroundColor: C.green,
+    width: 37,
+    height: 37,
+    borderRadius: 19,
+    backgroundColor: C.primary,
     borderWidth: 3,
     borderColor: C.white,
     alignItems: 'center',
     justifyContent: 'center',
   },
   profileName: {
-    textAlign: 'center',
     fontSize: 23,
-    lineHeight: 29,
     fontWeight: '900',
     color: C.text,
-    letterSpacing: -0.4,
-  },
-  profileEmail: {
     textAlign: 'center',
+  },
+  email: {
     fontSize: 12,
     color: C.muted,
     marginTop: 7,
+    textAlign: 'center',
   },
   roleBadge: {
-    alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 25,
-    marginTop: 13,
+    paddingVertical: 9,
+    borderRadius: 22,
+    marginTop: 14,
   },
   teacherBadge: {
-    backgroundColor: C.pinkDeep,
+    backgroundColor: C.primary,
   },
   studentBadge: {
-    backgroundColor: C.pinkLight,
+    backgroundColor: C.pale,
     borderWidth: 1,
     borderColor: C.border,
   },
@@ -907,161 +817,157 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   studentRoleText: {
-    color: C.pinkDeep,
+    color: C.dark,
   },
-  photoButton: {
-    alignSelf: 'center',
+  changePhotoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: C.light,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginTop: 17,
+  },
+  changePhotoText: {
+    color: C.dark,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  heroFooter: {
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingHorizontal: 15,
-    paddingVertical: 11,
-    marginTop: 15,
-    borderRadius: 14,
-    backgroundColor: C.pinkSoft,
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  photoButtonText: {
-    color: C.pinkDeep,
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  heroDivider: {
-    height: 1,
-    backgroundColor: C.border,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
     marginTop: 21,
-    marginBottom: 16,
+    paddingTop: 16,
   },
-  accountFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+  onlineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: C.green,
   },
-  accountFooterIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 13,
-    backgroundColor: C.greenSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  accountFooterTitle: {
-    color: C.text,
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  accountFooterSubtitle: {
+  heroFooterText: {
+    flex: 1,
     color: C.muted,
-    fontSize: 10,
-    marginTop: 3,
+    fontSize: 11,
+    fontWeight: '600',
   },
-  sectionHeader: {
+  sectionHeading: {
+    width: '100%',
+    maxWidth: 600,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 11,
     marginBottom: 13,
   },
   sectionIcon: {
-    width: 45,
-    height: 45,
+    width: 46,
+    height: 46,
     borderRadius: 15,
-    backgroundColor: C.pinkLight,
+    backgroundColor: C.pale,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  sectionHeadingText: {
+    flex: 1,
+  },
   sectionTitle: {
-    color: C.text,
     fontSize: 16,
     fontWeight: '900',
+    color: C.text,
   },
   sectionSubtitle: {
-    color: C.muted,
     fontSize: 11,
+    color: C.muted,
     marginTop: 4,
   },
   editButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: C.pinkSoft,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.border,
     paddingHorizontal: 12,
     paddingVertical: 9,
+    backgroundColor: C.pale,
+    borderRadius: 12,
   },
   editButtonText: {
-    color: C.pinkDeep,
+    color: C.primary,
     fontSize: 12,
     fontWeight: '800',
   },
-  sectionCard: {
+  card: {
+    width: '100%',
+    maxWidth: 600,
     backgroundColor: C.white,
+    borderRadius: 23,
     borderWidth: 1,
     borderColor: C.border,
-    borderRadius: 23,
     padding: 17,
-    marginBottom: 25,
-    shadowColor: C.pinkDark,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
+    marginBottom: 26,
+    shadowColor: C.dark,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.035,
+    shadowRadius: 9,
     elevation: 2,
   },
-  fieldLabel: {
+  label: {
     color: C.muted,
     fontSize: 10,
     fontWeight: '900',
     letterSpacing: 1.1,
-    marginBottom: 8,
     marginTop: 4,
+    marginBottom: 9,
   },
   input: {
-    minHeight: 51,
+    minHeight: 52,
+    backgroundColor: C.light,
     borderWidth: 1,
-    borderColor: C.pink,
-    borderRadius: 15,
+    borderColor: C.primary,
+    borderRadius: 14,
     paddingHorizontal: 14,
-    fontSize: 14,
     color: C.text,
-    backgroundColor: C.pinkSoft,
+    fontSize: 14,
     marginBottom: 17,
   },
-  valueBox: {
+  infoRow: {
     minHeight: 54,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 11,
-    paddingHorizontal: 11,
-    paddingVertical: 10,
-    backgroundColor: C.pinkSoft,
+    backgroundColor: C.light,
     borderWidth: 1,
-    borderColor: '#F8E0E9',
-    borderRadius: 15,
-    marginBottom: 17,
+    borderColor: C.border,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    marginBottom: 16,
   },
-  fieldIcon: {
-    width: 34,
-    height: 34,
+  infoIcon: {
+    width: 35,
+    height: 35,
     borderRadius: 11,
     backgroundColor: C.white,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  valueText: {
+  infoValue: {
     flex: 1,
     color: C.text,
     fontSize: 13,
     fontWeight: '600',
   },
-  userIdText: {
-    flex: 1,
-    color: C.muted,
+  smallValue: {
     fontSize: 10,
     lineHeight: 15,
   },
-  editActions: {
+  actions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 9,
@@ -1069,78 +975,160 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     minHeight: 45,
+    paddingHorizontal: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 16,
     borderRadius: 13,
-    backgroundColor: C.pinkSoft,
+    backgroundColor: C.pale,
   },
   cancelText: {
-    color: C.muted,
+    color: C.dark,
     fontSize: 12,
     fontWeight: '800',
   },
   saveButton: {
     minHeight: 45,
+    paddingHorizontal: 15,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 7,
-    paddingHorizontal: 15,
     borderRadius: 13,
-    backgroundColor: C.pinkDeep,
+    backgroundColor: C.primary,
   },
   saveText: {
     color: C.white,
     fontSize: 12,
     fontWeight: '900',
   },
-  disabledButton: {
+  disabled: {
     opacity: 0.65,
   },
-  academicRow: {
+
+  /* ACADEMIC CARD */
+  academicCard: {
+    width: '100%',
+    maxWidth: 600,
+    backgroundColor: C.white,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 15,
+    marginBottom: 26,
+    overflow: 'hidden',
+    shadowColor: C.dark,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  academicBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 7,
+    gap: 13,
+    backgroundColor: C.primary,
+    borderRadius: 19,
+    padding: 16,
   },
-  academicIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: C.pinkLight,
+  academicBannerIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: '#579DD0',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  academicLabel: {
-    color: C.muted,
+  academicBannerContent: {
+    flex: 1,
+  },
+  academicBannerLabel: {
+    color: '#DDF2FF',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+    marginBottom: 6,
+  },
+  academicBannerTitle: {
+    color: C.white,
+    fontSize: 15,
+    fontWeight: '900',
+    lineHeight: 21,
+  },
+  academicBannerSubtitle: {
+    color: '#E0F2FF',
     fontSize: 11,
-    marginBottom: 4,
+    marginTop: 6,
+    fontWeight: '600',
   },
-  academicValue: {
-    color: C.text,
-    fontSize: 14,
-    fontWeight: '800',
+  academicDetails: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingVertical: 20,
   },
-  line: {
-    height: 1,
-    backgroundColor: '#F7E3EB',
-    marginVertical: 12,
+  academicDetailItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 2,
   },
+  academicDetailIcon: {
+    width: 45,
+    height: 45,
+    borderRadius: 15,
+    backgroundColor: C.pale,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  academicDetailLabel: {
+    color: C.muted,
+    fontSize: 10,
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  academicDetailValue: {
+    color: C.dark,
+    fontSize: 13,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  academicDetailDivider: {
+    width: 1,
+    height: 80,
+    backgroundColor: C.border,
+    marginTop: 5,
+  },
+  academicFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    backgroundColor: C.greenBg,
+    borderRadius: 13,
+    paddingVertical: 11,
+  },
+  academicFooterText: {
+    color: C.green,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
   tipCard: {
+    width: '100%',
+    maxWidth: 600,
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 12,
-    backgroundColor: C.pinkLight,
+    backgroundColor: C.pale,
     borderWidth: 1,
     borderColor: C.border,
-    borderRadius: 19,
+    borderRadius: 20,
     padding: 16,
-    marginBottom: 22,
+    marginBottom: 23,
   },
   tipIcon: {
-    width: 42,
-    height: 42,
+    width: 43,
+    height: 43,
     borderRadius: 14,
     backgroundColor: C.white,
     alignItems: 'center',
@@ -1155,31 +1143,36 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     marginBottom: 5,
   },
-  tipText: {
+  tipDescription: {
     color: C.muted,
     fontSize: 12,
     lineHeight: 19,
   },
   signOutCard: {
+    width: '100%',
+    maxWidth: 600,
     backgroundColor: C.white,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: C.border,
-    borderRadius: 22,
     padding: 17,
-    gap: 16,
+    gap: 17,
   },
-  signOutHeader: {
+  signOutTop: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
   signOutIcon: {
-    width: 44,
-    height: 44,
+    width: 45,
+    height: 45,
     borderRadius: 14,
-    backgroundColor: C.redSoft,
+    backgroundColor: C.redBg,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  signOutInfo: {
+    flex: 1,
   },
   signOutTitle: {
     color: C.text,
@@ -1205,16 +1198,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
   },
-  heading: {
-    color: C.text,
-    fontSize: 22,
-    fontWeight: '900',
-    marginTop: 5,
-  },
-  loginButton: {
+  primaryButton: {
+    minHeight: 49,
     width: '100%',
     maxWidth: 300,
-    marginTop: 20,
+    marginTop: 22,
+    paddingHorizontal: 18,
+    borderRadius: 15,
+    backgroundColor: C.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  primaryButtonText: {
+    color: C.white,
+    fontSize: 14,
+    fontWeight: '800',
   },
   pressed: {
     opacity: 0.78,
@@ -1222,8 +1222,8 @@ const styles = StyleSheet.create({
   },
   footer: {
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 7,
     marginTop: 26,
   },
